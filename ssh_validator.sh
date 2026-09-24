@@ -64,32 +64,39 @@ while IFS= read -r host || [[ -n "$host" ]]; do
     -o ConnectTimeout=30 \
     -o NumberOfPasswordPrompts=1 \
     -o PreferredAuthentications=password \
-    "$SSH_USER@$host" "$(if $DISK_STATS; then echo 'df -h /home/; '; fi)exit" 2>&1)"
+    "$SSH_USER@$host" "$(if $DISK_STATS; then echo 'uptime; df -h /home/; '; fi)exit" 2>&1)"
   rc=$?
+
+  # Remove o aviso do ssh sobre known_hosts, que nao interessa ao usuario.
+  output="$(grep -v "^Warning: Permanently added" <<< "$output")"
 
   if [[ $rc -eq 0 ]]; then
     if $DISK_STATS; then
       printf "%s\n" "$host"
-      printf "%s\n" "$output"
+      printf "Status SSH: \033[32mOK\033[0m\n"
+
+      uptime_info="$(sed -n '1p' <<< "$output")"
+      printf "Status Uptime: %s\n" "$uptime_info"
+      disk_output="$(awk '/^Filesystem[[:space:]]/{found=1} found' <<< "$output")"
 
       while IFS= read -r df_line; do
         [[ -z "$df_line" || "$df_line" =~ Use% ]] && continue
         use_pct="$(awk '{for(i=1;i<=NF;i++) if ($i ~ /^[0-9]+%$/) print $i}' <<< "$df_line")"
         [[ -z "$use_pct" ]] && continue
         status_info="$(classify_disk_status "${use_pct%%%}")"
-        printf "\033[%smStatus Armazenamento: %s (%s)\033[0m\n" "${status_info#*|}" "${status_info%%|*}" "$use_pct"
-      done <<< "$output"
+        printf "Status Armazenamento: \033[%sm%s (%s)\033[0m\n" "${status_info#*|}" "${status_info%%|*}" "$use_pct"
+      done <<< "$disk_output"
 
-      printf "\033[32mStatus SSH: OK\033[0m\n\n"
+      printf "%s\n\n" "$disk_output"
     else
-      printf "\033[32m%s - OK\033[0m\n" "$host"
+      printf "%s - \033[32mOK\033[0m\n" "$host"
     fi
   elif [[ "$output" =~ [Pp]ermission[[:space:]]denied|[Aa]ccess[[:space:]]denied ]]; then
-    printf "\033[33m%s - Permission denied\033[0m\n" "$host"
+    printf "%s - \033[33mPermission denied\033[0m\n" "$host"
   elif [[ "$output" =~ [Tt]imed[[:space:]]out|[Cc]onnection[[:space:]]timed[[:space:]]out ]]; then
-    printf "\033[31m%s - Host unavailable\033[0m\n" "$host"
+    printf "%s - \033[31mHost unavailable\033[0m\n" "$host"
   else
-    printf "\033[31m%s - Host unavailable\033[0m\n" "$host"
+    printf "%s - \033[31mHost unavailable\033[0m\n" "$host"
   fi
 done < "$HOSTS_FILE"
 
